@@ -1,7 +1,7 @@
 {
   "name": "@codibri/vendure-plugin-product-catalog-feed",
-  "version": "0.0.0",
-  "description": "Vendure plugin for product review",
+  "version": "1.0.0",
+  "description": "Vendure plugin to create product catalog feed",
   "author": "Toon Janssens <toon@codibri.be>",
   "repository": "https://github.com/Codibri-BV/codibri-vendure-plugins",
   "license": "MIT",
