@@ -1,0 +1,14 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "command": "yarn lerna run start --scope=@codibri/vendure-plugin-product-catalog-feed",
+            "name": "Product catelog feed",
+            "request": "launch",
+            "type": "node-terminal"
+        }
+    ]
+}
