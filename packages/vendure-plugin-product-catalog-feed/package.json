@@ -1,9 +1,9 @@
 {
   "name": "@codibri/vendure-plugin-product-catalog-feed",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "description": "Vendure plugin for product review",
   "author": "Toon Janssens <toon@codibri.be>",
-  "repository": "https://github.com/vendure-ecommerce/plugin-template",
+  "repository": "https://github.com/Codibri-BV/codibri-vendure-plugins",
   "license": "MIT",
   "private": false,
   "engines": {
@@ -22,13 +22,11 @@
   },
   "dependencies": {
     "cron": "^3.1.6",
-    "lodash": "^4.17.21",
     "ssh2-sftp-client": "^10.0.3",
     "xmlbuilder2": "^3.1.1"
   },
   "devDependencies": {
     "@micham/sftp-mock-server": "^0.0.6",
-    "@types/lodash": "^4.14.202",
     "@types/ssh2-sftp-client": "^9.0.3"
   }
 }
