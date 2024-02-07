@@ -89,6 +89,7 @@ import { PLUGIN_INIT_OPTIONS } from "./constants";
           value: "SFTP port",
         },
       ],
+      defaultValue: 22,
       public: false,
       ui: { tab: "Product Catalog" },
     });
