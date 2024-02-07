@@ -83,8 +83,7 @@ const sftpConfig = {
     input: {
       id: "T_1",
       customFields: {
-        productCatalogOutput: "url",
-        // productCatalogOutput: "sftp",
+        productCatalogOutput: "sftp",
         productCatalogShopUrl: "https://www.shop.com",
         productCatalogSftpServer: sftpConfig.hostname,
         productCatalogSftpPort: sftpConfig.port,
