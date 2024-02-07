@@ -1,36 +1,53 @@
-# Vendure plugin template
+# Vendure product catalog feed plugin
 
-1. Copy this directory and rename to `vendure-plugin-YOUR-PLUGIN-NAME`
-2. Update the `name` and `description` field in `package.json`
-4. Update this Readme: What does the plugin do? How can someone use your plugin in their project?
-5. Run `yarn` to install the dependencies
-6. Run `yarn start` to start the server
+This plugin generates an xml of all products to sync your catalog with Google or other tools.
 
-The admin is now available at `http://localhost:3050/admin`. Login with _superadmin/superadmin_
+When a product or variant is changed, the channel will be marked to rebuild the xml. Every night the channels with changes get rebuild. The interval for the rebuild is configurable via cron notation. For each channel the build is executed in a worker.
 
-The shop GraphQL `http://localhost:3050/shop-api`. Here you can test your custom GraphQL query:
-```graphql
-{
-  exampleQuery
-}
+## Requirements
+
+Install the Payments plugin and the Mollie client:
+
+`yarn add @codibri/vendure-plugin-product-catalog-feed`
+or
+`npm install @codibri/vendure-plugin-product-catalog-feed`
+
+## Setup
+
+1. Add the plugin to your VendureConfig plugins array
+
+```typescript
+import { ProductCatalogFeedPlugin } from "@codibri/vendure-plugin-product-catalog-feed";
+
+// ...
+
+plugins: [ProductCatalogFeedPlugin.init({ outputInterval: "0 0 * * *" }), ,];
 ```
 
-## Testing
+2. Go to the channel config in the Admin UI and change the _Product catalog_ field to _URL_ or _SFTP_ to enable the channels product feed.
 
-1. Run `yarn test` to run the e2e test.
-2. Don't forget to implement your own!
+## Plugin options
 
-## Publishing to NPM
+| key            | required | default value | description                                                   |
+| -------------- | -------- | ------------- | ------------------------------------------------------------- |
+| outputInterval | no       | `0 0 * * *`   | The interval for building the XML file in _cronTime_ notation |
 
-1. Make sure you are [logged in to NPM](https://docs.npmjs.com/cli/v9/commands/npm-login)
-2. `yarn build`
-3. `yarn publish`
+## Config
 
-That's it!
+In the Admin UI you can configure each channel individually.
 
-(Maybe share your accomplishments in the [Vendure slack](https://join.slack.com/t/vendure-ecommerce/shared_invite/zt-1exzio25w-vjL5TYkyJZjK52d6jkOsIA)?
+| Field           | Description                                                                                                                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Shop URL        | THe url of the shop front end.                                                                                                                                                                                                             |
+| Product catalog | <ul><li>**Disabled**: No product feed will be generated for this channel</li><li></li>**URL**: The XML file will be build and availble via an url<li>**SFTP**: The XML file will be build and uploaded to configured SFTP server</li></ul> |
+|SFTP server| Only when **SFTP** is selected as output|
+|SFTP port| Only when **SFTP** is selected as output. Must be between 1 and 65535 |
+|SFTP user| Only when **SFTP** is selected as output|
+|SFTP password| Only when **SFTP** is selected as output|
 
-## Next steps
+## API endpoint
 
-1. Check out [the docs](https://www.vendure.io/docs/plugins/) to see the possibilities of a plugin
-2. Check out [GraphQL codegen](https://the-guild.dev/graphql/codegen) to generate Typescript types for your custom GraphQL types
+When **URL** is selected in the channel config, the genrated XML is availble via the `/product-catalog`
+
+If you only have multiple channel, you can provide the channel token in the header or as query parameter.
+`/product-catalog?token=channelToken`
