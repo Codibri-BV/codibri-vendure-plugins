@@ -167,7 +167,8 @@ export class ProductCatalogFeedService implements OnModuleInit {
 
     await this.sftpClient.delete(fileName, true)
     await this.sftpClient.put(Buffer.from(xml), fileName);
-
+    await this.sftpClient.end()
+    
     return {
       file: fileName
     }
