@@ -28,6 +28,30 @@ import { firstValueFrom } from "rxjs";
         }
       },
       requiresPermission: "ProductCatalogFeedRebuild",
+      buttonState: (context) => {
+        return context.dataService
+          .query<{
+            activeChannel: { customFields: { productCatalogOutput: string } };
+          }>(
+            gql`
+              query {
+                activeChannel {
+                  customFields {
+                    productCatalogOutput
+                  }
+                }
+              }
+            `
+          )
+          .mapSingle((data) => {
+            return {
+              disabled: false,
+              visible:
+                data.activeChannel.customFields.productCatalogOutput !=
+                "disabled",
+            };
+          });
+      },
     }),
   ],
 })
