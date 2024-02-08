@@ -1,3 +1,5 @@
+import path from 'path';
+import { AdminUiExtension } from '@vendure/ui-devkit/compiler';
 import {
   EventBus,
   LanguageCode,
@@ -10,10 +12,16 @@ import { ProductCatalogFeedService } from "./service/product-catalog-feed.servic
 import "./types";
 import { ProductCatalogController } from "./api/product-catalog.controller";
 import { ProductCatalogFeedPluginOptions } from "./types";
-import { PLUGIN_INIT_OPTIONS } from "./constants";
+import { PLUGIN_INIT_OPTIONS, productCatalogFeedPerm } from "./constants";
+import { adminApiExtensions } from "./api/api-extentions";
+import { ProductCatalogAdminResolver } from "./api/product-catalog.admin.resolver";
 
 @VendurePlugin({
   imports: [PluginCommonModule],
+  adminApiExtensions: {
+    schema: adminApiExtensions,
+    resolvers: [ProductCatalogAdminResolver]
+  },
   providers: [
     ProductCatalogFeedService,
     {
@@ -24,6 +32,8 @@ import { PLUGIN_INIT_OPTIONS } from "./constants";
   controllers: [ProductCatalogController],
   compatibility: ">0.0.0",
   configuration: (config) => {
+    config.authOptions.customPermissions.push(productCatalogFeedPerm);
+
     config.customFields.Channel.push({
       type: "string",
       name: "productCatalogShopUrl",
@@ -144,6 +154,18 @@ export class ProductCatalogFeedPlugin {
     this.options = {outputInterval: '0 0 * * *',  ...options};
     return ProductCatalogFeedPlugin;
   }
+
+  static ui: AdminUiExtension = {
+    id: 'product-catalog-feed-extentions',
+    extensionPath: path.join(__dirname, 'ui'),
+    ngModules: [
+      {
+        type: "shared",
+        ngModuleFileName: "product-catalog-feed.module.ts",
+        ngModuleName: "ProductCatalogFeedModule",
+      },
+    ],
+  };
 
   constructor(
     private eventBus: EventBus,

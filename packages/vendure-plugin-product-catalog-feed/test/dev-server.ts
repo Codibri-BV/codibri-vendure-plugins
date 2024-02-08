@@ -19,6 +19,7 @@ import path from "path";
 import { initialData } from "../../test-utils/src/initial-data";
 import { ProductCatalogFeedPlugin } from "../src";
 import { createSftpMockServer } from "@micham/sftp-mock-server";
+import { compileUiExtensions } from "@vendure/ui-devkit/compiler";
 
 require("dotenv").config();
 
@@ -50,6 +51,11 @@ const sftpConfig = {
       AdminUiPlugin.init({
         port: 3002,
         route: "admin",
+        app: compileUiExtensions({
+          outputPath: path.join(__dirname, "../admin-ui"),
+          extensions: [ProductCatalogFeedPlugin.ui],
+          devMode: true
+        }),
       }),
     ],
     apiOptions: {

@@ -95,9 +95,13 @@ export class ProductCatalogFeedService implements OnModuleInit {
 
     channels.map((channel) => {
       if (channel.customFields.rebuildCatalogFeed) {
-        this.jobQueue.add({ channelId: channel.id });
+        this.addChannelRebuildToQueue(channel.id );
       }
     });
+  }
+
+  addChannelRebuildToQueue(channelId: ID) {
+    return this.jobQueue.add({ channelId });
   }
 
   async buildChannelFeed(channelId: ID) {
