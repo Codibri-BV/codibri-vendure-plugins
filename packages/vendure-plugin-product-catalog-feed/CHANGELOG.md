@@ -1,3 +1,11 @@
+# 1.1.2 (2024-02-09)
+
+- Fix: Missing images in XML
+
+# 1.1.1 (2024-02-09)
+
+- Fix: building ui folder correctly
+
 # 1.1.0 (2024-02-07)
 
 - Fix: close sftp connection after uploading file
