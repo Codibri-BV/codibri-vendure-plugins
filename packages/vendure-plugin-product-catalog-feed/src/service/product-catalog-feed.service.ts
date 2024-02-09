@@ -122,17 +122,23 @@ export class ProductCatalogFeedService implements OnModuleInit {
     const variantsWithProduct = await Promise.all(
       variants.items.map(async (variant) => {
         return this.entityHydrator.hydrate(ctx, variant, {
-          relations: ["product"],
+          relations: ["product", "product.featuredAsset"],
         });
       })
     );
+
+    const getImage = (image?: string) => {
+      if (image) {
+        return `${channel.customFields.productCatalogShopUrl}/${image}`
+      }
+    }
 
     const feedProducts = variantsWithProduct.map<FeedProduct>((variant) => ({
       id: variant.sku,
       title: variant.name,
       description: variant.product.description,
       link: `/product/${variant.product.slug}`,
-      imageLink: variant.product?.featuredAsset?.preview,
+      imageLink: getImage(variant.featuredAsset?.preview ?? variant.product?.featuredAsset?.preview),
       price: variant.priceWithTax,
       currency: variant.currencyCode,
     }));
