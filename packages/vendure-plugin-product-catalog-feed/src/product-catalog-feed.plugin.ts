@@ -149,7 +149,7 @@ export class ProductCatalogFeedPlugin {
   static options: ProductCatalogFeedPluginOptions;
 
   static init(
-    options: Partial<ProductCatalogFeedPluginOptions>
+    options: Pick<ProductCatalogFeedPluginOptions, 'vendureHost'> & Partial<ProductCatalogFeedPluginOptions>
   ): typeof ProductCatalogFeedPlugin {
     this.options = {outputInterval: '0 0 * * *',  ...options};
     return ProductCatalogFeedPlugin;

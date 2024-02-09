@@ -46,7 +46,7 @@ const sftpConfig = {
         assetUploadDir: path.join(__dirname, "__data__/assets"),
         route: "assets",
       }),
-      ProductCatalogFeedPlugin.init({ outputInterval: "* * * * *" }),
+      ProductCatalogFeedPlugin.init({ vendureHost: 'http://localhost:3050', outputInterval: "* * * * *" }),
       DefaultSearchPlugin,
       AdminUiPlugin.init({
         port: 3002,

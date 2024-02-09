@@ -127,9 +127,9 @@ export class ProductCatalogFeedService implements OnModuleInit {
       })
     );
 
-    const getImage = (image?: string) => {
+    const getImageUrl = (image?: string) => {
       if (image) {
-        return `${channel.customFields.productCatalogShopUrl}/${image}`
+        return `${this.options.vendureHost.trim()}/${image}`
       }
     }
 
@@ -137,8 +137,8 @@ export class ProductCatalogFeedService implements OnModuleInit {
       id: variant.sku,
       title: variant.name,
       description: variant.product.description,
-      link: `/product/${variant.product.slug}`,
-      imageLink: getImage(variant.featuredAsset?.preview ?? variant.product?.featuredAsset?.preview),
+      link: `product/${variant.product.slug}`,
+      imageLink: getImageUrl(variant.featuredAsset?.preview ?? variant.product?.featuredAsset?.preview),
       price: variant.priceWithTax,
       currency: variant.currencyCode,
     }));
