@@ -22,16 +22,16 @@ import { ProductCatalogFeedPlugin } from "@codibri/vendure-plugin-product-catalo
 // ...
 
 plugins: [
-    AdminUiPlugin.init({
-        port: 3002,
-        route: "admin",
-        app: compileUiExtensions({
-          outputPath: path.join(__dirname, "../admin-ui"),
-          extensions: [ProductCatalogFeedPlugin.ui],
-          devMode: true
-        }),
-      }),
-    ProductCatalogFeedPlugin.init({ outputInterval: "0 0 * * *" })
+  AdminUiPlugin.init({
+    port: 3002,
+    route: "admin",
+    app: compileUiExtensions({
+      outputPath: path.join(__dirname, "../admin-ui"),
+      extensions: [ProductCatalogFeedPlugin.ui],
+      devMode: true,
+    }),
+  }),
+  ProductCatalogFeedPlugin.init({ outputInterval: "0 0 * * *" }),
 ];
 ```
 
@@ -41,7 +41,7 @@ plugins: [
 
 | key            | required | default value | description                                                   |
 | -------------- | -------- | ------------- | ------------------------------------------------------------- |
-| vendureHost    | yes      |               | The url to access the Vendure server                          |
+| assetUrlPrefix | yes      |               | The url to access the Vendure server                          |
 | outputInterval | no       | `0 0 * * *`   | The interval for building the XML file in _cronTime_ notation |
 
 ## Config
