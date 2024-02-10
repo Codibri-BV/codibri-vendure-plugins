@@ -7,15 +7,21 @@ import {
   JobQueue,
   JobQueueService,
   Logger,
+  ProductVariant,
   ProductVariantService,
   RequestContext,
   RequestContextService,
-  TransactionalConnection
+  StockLevelService,
+  TransactionalConnection,
 } from "@vendure/core";
 import { CronJob } from "cron";
 import Client from "ssh2-sftp-client";
 import { PLUGIN_INIT_OPTIONS, loggerCtx } from "../constants";
-import { CatalogFeedBuilder, FeedProduct } from "../helper/CatalogFeedBuilder";
+import {
+  AvailabilityFeedField,
+  CatalogFeedBuilder,
+  FeedProduct,
+} from "../helper/CatalogFeedBuilder";
 import { ProductCatalogFeedPluginOptions } from "../types";
 
 @Injectable()
@@ -25,13 +31,15 @@ export class ProductCatalogFeedService implements OnModuleInit {
   private sftpClient: Client;
 
   constructor(
-    @Inject(PLUGIN_INIT_OPTIONS) private options: ProductCatalogFeedPluginOptions,
+    @Inject(PLUGIN_INIT_OPTIONS)
+    private options: ProductCatalogFeedPluginOptions,
     private jobQueueService: JobQueueService,
     private productVariantService: ProductVariantService,
     private entityHydrator: EntityHydrator,
     private connection: TransactionalConnection,
     private requestContextService: RequestContextService,
-    private configService: ConfigService
+    private configService: ConfigService,
+    private stockLevelService: StockLevelService
   ) {
     this.sftpClient = new Client();
   }
@@ -47,6 +55,10 @@ export class ProductCatalogFeedService implements OnModuleInit {
     this.cron = new CronJob(this.options.outputInterval, () => {
       return this.buildAllFeeds();
     });
+  }
+
+  onModuleDestroy() {
+    this.cron.stop();
   }
 
   async markChannelForRebuild(ctx: RequestContext) {
@@ -87,15 +99,15 @@ export class ProductCatalogFeedService implements OnModuleInit {
   }
 
   async buildAllFeeds() {
-    Logger.verbose('Checking channels to build', loggerCtx)
-    
+    Logger.verbose("Checking channels to build", loggerCtx);
+
     const channels = await this.connection.rawConnection
       .getRepository(Channel)
       .find();
 
     channels.map((channel) => {
       if (channel.customFields.rebuildCatalogFeed) {
-        this.addChannelRebuildToQueue(channel.id );
+        this.addChannelRebuildToQueue(channel.id);
       }
     });
   }
@@ -129,19 +141,40 @@ export class ProductCatalogFeedService implements OnModuleInit {
 
     const getImageUrl = (image?: string) => {
       if (image) {
-        return `${this.options.vendureHost.trim()}/${image}`
+        return `${this.options.assetUrlPrefix.trim()}/${image}`;
       }
-    }
+    };
 
-    const feedProducts = variantsWithProduct.map<FeedProduct>((variant) => ({
-      id: variant.sku,
-      title: variant.name,
-      description: variant.product.description,
-      link: `product/${variant.product.slug}`,
-      imageLink: getImageUrl(variant.featuredAsset?.preview ?? variant.product?.featuredAsset?.preview),
-      price: variant.priceWithTax,
-      currency: variant.currencyCode,
-    }));
+    const getAvailability = async (
+      variant: ProductVariant
+    ): Promise<AvailabilityFeedField> => {
+      const stock = await this.stockLevelService.getAvailableStock(
+        ctx,
+        variant.id
+      );
+
+      return stock.stockOnHand > 1 ? "in_stock" : "out_of_stock";
+    };
+
+    const feedProducts = await Promise.all(
+      variantsWithProduct.map<Promise<FeedProduct>>(async (variant) => {
+        const availability = await getAvailability(variant);
+
+        return {
+          id: variant.sku,
+          title: variant.name,
+          description: variant.product.description,
+          link: `product/${variant.product.slug}`,
+          imageLink: getImageUrl(
+            variant.featuredAsset?.preview ??
+              variant.product?.featuredAsset?.preview
+          ),
+          price: variant.priceWithTax,
+          currency: variant.currencyCode,
+          availability,
+        };
+      })
+    );
 
     const xml = this.buildXML(feedProducts, channel);
 
@@ -171,13 +204,13 @@ export class ProductCatalogFeedService implements OnModuleInit {
 
     const fileName = `${channel.token}.xml`;
 
-    await this.sftpClient.delete(fileName, true)
+    await this.sftpClient.delete(fileName, true);
     await this.sftpClient.put(Buffer.from(xml), fileName);
-    await this.sftpClient.end()
-    
+    await this.sftpClient.end();
+
     return {
-      file: fileName
-    }
+      file: fileName,
+    };
   }
 
   private async output(
@@ -189,7 +222,7 @@ export class ProductCatalogFeedService implements OnModuleInit {
 
       return {
         channel,
-        output: { file  },
+        output: { file },
       };
     }
 

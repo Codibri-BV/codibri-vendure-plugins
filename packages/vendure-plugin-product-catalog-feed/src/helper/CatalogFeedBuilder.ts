@@ -7,6 +7,8 @@ export type FeedOptions = {
     description?: string;
 }
 
+export type AvailabilityFeedField = 'in_stock' | 'out_of_stock' | 'preorder' | 'backorder'
+
 export type FeedProduct = {
     id: string;
     title: string;
@@ -15,6 +17,7 @@ export type FeedProduct = {
     imageLink?: string;
     price: number;
     currency: string;
+    availability: AvailabilityFeedField
   };
 
 export class CatalogFeedBuilder {
@@ -53,6 +56,7 @@ export class CatalogFeedBuilder {
         }
 
         item.ele("g:price").txt(`${product.price / 100} ${product.currency}`);
+        item.ele("g:availability").txt(product.availability);
     }
 
     xml() {

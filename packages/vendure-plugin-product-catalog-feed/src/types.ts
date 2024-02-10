@@ -15,5 +15,5 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
 
 export interface ProductCatalogFeedPluginOptions {
     outputInterval: string;
-    vendureHost: string;
+    assetUrlPrefix: string;
   }
