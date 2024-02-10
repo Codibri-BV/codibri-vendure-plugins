@@ -1,3 +1,12 @@
+# 1.3.0 (2024-02-10)
+
+- Feat: Add availabiltiy field
+- Refactor: rename vendureHost to assetUrlPrefix in the config
+
+# 1.2.0 (2024-02-10)
+
+- Fix: correct url for images
+
 # 1.1.2 (2024-02-09)
 
 - Fix: Missing images in XML
