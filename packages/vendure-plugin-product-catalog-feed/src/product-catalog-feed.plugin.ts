@@ -30,7 +30,7 @@ import { ProductCatalogAdminResolver } from "./api/product-catalog.admin.resolve
     },
   ],
   controllers: [ProductCatalogController],
-  compatibility: ">0.0.0",
+  compatibility: ">2.0.0",
   configuration: (config) => {
     config.authOptions.customPermissions.push(productCatalogFeedPerm);
 
