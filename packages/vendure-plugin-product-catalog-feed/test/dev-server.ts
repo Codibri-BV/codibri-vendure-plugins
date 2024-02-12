@@ -17,7 +17,7 @@ import {
 } from "@vendure/testing";
 import path from "path";
 import { initialData } from "../../test-utils/src/initial-data";
-import { ProductCatalogFeedPlugin } from "../src";
+import { ProductCatalogFeedPlugin, ProductCatalogFeedService } from "../src";
 import { createSftpMockServer } from "@micham/sftp-mock-server";
 import { compileUiExtensions } from "@vendure/ui-devkit/compiler";
 
@@ -46,7 +46,7 @@ const sftpConfig = {
         assetUploadDir: path.join(__dirname, "__data__/assets"),
         route: "assets",
       }),
-      ProductCatalogFeedPlugin.init({ assetUrlPrefix: 'http://localhost:3050/assets', outputInterval: "* * * * *" }),
+      ProductCatalogFeedPlugin.init({ assetUrlPrefix: 'http://localhost:3050/assets' }),
       DefaultSearchPlugin,
       AdminUiPlugin.init({
         port: 3002,
@@ -113,4 +113,6 @@ const sftpConfig = {
     }
   `;
   await adminClient.query(updateMutation);
+  
+  await server.app.get(ProductCatalogFeedService).buildAllFeeds()
 })();

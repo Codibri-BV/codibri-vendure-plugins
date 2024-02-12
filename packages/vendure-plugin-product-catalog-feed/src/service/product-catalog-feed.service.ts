@@ -14,7 +14,6 @@ import {
   StockLevelService,
   TransactionalConnection,
 } from "@vendure/core";
-import { CronJob } from "cron";
 import Client from "ssh2-sftp-client";
 import { PLUGIN_INIT_OPTIONS, loggerCtx } from "../constants";
 import {
@@ -27,7 +26,6 @@ import { ProductCatalogFeedPluginOptions } from "../types";
 @Injectable()
 export class ProductCatalogFeedService implements OnModuleInit {
   private jobQueue: JobQueue<{ channelId: ID }>;
-  private cron: CronJob<() => void>;
   private sftpClient: Client;
 
   constructor(
@@ -51,14 +49,6 @@ export class ProductCatalogFeedService implements OnModuleInit {
         return this.buildChannelFeed(job.data.channelId);
       },
     });
-
-    this.cron = new CronJob(this.options.outputInterval, () => {
-      return this.buildAllFeeds();
-    });
-  }
-
-  onModuleDestroy() {
-    this.cron.stop();
   }
 
   async markChannelForRebuild(ctx: RequestContext) {
@@ -77,11 +67,6 @@ export class ProductCatalogFeedService implements OnModuleInit {
       channel.customFields.rebuildCatalogFeed = true;
       await this.connection.getRepository(ctx, Channel).save(channel);
     }
-  }
-
-  async startProductFeed() {
-    this.buildAllFeeds();
-    this.cron.start();
   }
 
   buildXML(products: FeedProduct[], channel: Channel) {

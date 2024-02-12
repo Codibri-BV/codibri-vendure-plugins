@@ -42,7 +42,6 @@ plugins: [
 | key            | required | default value | description                                                   |
 | -------------- | -------- | ------------- | ------------------------------------------------------------- |
 | assetUrlPrefix | yes      |               | The url to access the Vendure server                          |
-| outputInterval | no       | `0 0 * * *`   | The interval for building the XML file in _cronTime_ notation |
 
 ## Config
 
@@ -64,8 +63,27 @@ When **URL** is selected in the channel config, the genrated XML is availble via
 If you only have multiple channel, you can provide the channel token in the header or as query parameter.
 `/product-catalog?token=channelToken`
 
-## Manual trigger
+## Building the feed
+
+### Run mannually
 
 On the products overview page in the Admin UI you will find a new button "Rebuild product catalog" to trigger the build of the product catalog feed of the current selected channel.
 
 An extra permission `ProductCatalogFeedRebuild` is added to control who can accees the manual trigger button on the products page.
+
+### Run automatically
+Create a script to check all channels that needs to be rebuild. Use a job runner or cron job to run this script.
+
+```typescript
+// product-catalog-feed.ts
+
+import { bootstrap } from "@vendure/core";
+import { ProductCatalogFeedService } from "@codibri/vendure-plugin-product-catalog-feed";
+import { config } from "./vendure-config";
+
+bootstrap(config)
+  .then((app) => app.get(ProductCatalogFeedService).buildAllFeeds())
+  .catch((err) => {
+    console.log(err);
+  });
+```

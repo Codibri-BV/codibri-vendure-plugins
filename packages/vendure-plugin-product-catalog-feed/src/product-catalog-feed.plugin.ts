@@ -149,9 +149,9 @@ export class ProductCatalogFeedPlugin {
   static options: ProductCatalogFeedPluginOptions;
 
   static init(
-    options: Pick<ProductCatalogFeedPluginOptions, 'assetUrlPrefix'> & Partial<ProductCatalogFeedPluginOptions>
+    options: ProductCatalogFeedPluginOptions
   ): typeof ProductCatalogFeedPlugin {
-    this.options = {outputInterval: '0 0 * * *',  ...options};
+    this.options = options;
     return ProductCatalogFeedPlugin;
   }
 
@@ -173,8 +173,6 @@ export class ProductCatalogFeedPlugin {
   ) {}
 
   async onApplicationBootstrap() {
-    this.productCatalogFeedService.startProductFeed();
-
     this.eventBus.ofType(ProductEvent).subscribe(async (event) => {
       return this.productCatalogFeedService.markChannelForRebuild(event.ctx);
     });
