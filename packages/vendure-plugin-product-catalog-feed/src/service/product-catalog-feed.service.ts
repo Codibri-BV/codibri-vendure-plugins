@@ -2,26 +2,34 @@ import { Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import {
   Channel,
   ConfigService,
-  EntityHydrator,
   ID,
   JobQueue,
   JobQueueService,
   Logger,
+  ProductPriceApplicator,
   ProductVariant,
-  ProductVariantService,
   RequestContext,
   RequestContextService,
   StockLevelService,
   TransactionalConnection,
+  TranslatorService,
+  asyncObservable
 } from "@vendure/core";
 import Client from "ssh2-sftp-client";
 import { PLUGIN_INIT_OPTIONS, loggerCtx } from "../constants";
 import {
   AvailabilityFeedField,
-  CatalogFeedBuilder,
-  FeedProduct,
+  CatalogFeedBuilder
 } from "../helper/CatalogFeedBuilder";
 import { ProductCatalogFeedPluginOptions } from "../types";
+
+export const BATCH_SIZE = 2;
+
+type BuildFeedReponse = {
+  total: number,
+  completed: number,
+  duration: number,
+}
 
 @Injectable()
 export class ProductCatalogFeedService implements OnModuleInit {
@@ -32,12 +40,12 @@ export class ProductCatalogFeedService implements OnModuleInit {
     @Inject(PLUGIN_INIT_OPTIONS)
     private options: ProductCatalogFeedPluginOptions,
     private jobQueueService: JobQueueService,
-    private productVariantService: ProductVariantService,
-    private entityHydrator: EntityHydrator,
     private connection: TransactionalConnection,
     private requestContextService: RequestContextService,
     private configService: ConfigService,
-    private stockLevelService: StockLevelService
+    private stockLevelService: StockLevelService,
+    private translator: TranslatorService,
+    private productPriceApplicator: ProductPriceApplicator,
   ) {
     this.sftpClient = new Client();
   }
@@ -46,7 +54,36 @@ export class ProductCatalogFeedService implements OnModuleInit {
     this.jobQueue = await this.jobQueueService.createQueue({
       name: "product-catalog-feed",
       process: async (job) => {
-        return this.buildChannelFeed(job.data.channelId);
+        const ob = this.buildChannelFeed(job.data.channelId);
+        
+        return new Promise((resolve, reject) => {
+          let total: number | undefined;
+          let duration = 0;
+          let completed = 0;
+          ob.subscribe({
+              next: (response: BuildFeedReponse) => {
+                  if (!total) {
+                      total = response.total;
+                  }
+                  duration = response.duration;
+                  completed = response.completed;
+                  const progress = total === 0 ? 100 : Math.ceil((completed / total) * 100);
+                  job.setProgress(progress);
+              },
+              complete: () => {
+                  resolve({
+                      success: true,
+                      totalProductsCount: total,
+                      timeTaken: duration,
+                  });
+              },
+              error: (err: any) => {
+                  Logger.error(err.message || JSON.stringify(err), undefined, err.stack);
+                  reject(err);
+              },
+          });
+      });
+        
       },
     });
   }
@@ -69,31 +106,16 @@ export class ProductCatalogFeedService implements OnModuleInit {
     }
   }
 
-  buildXML(products: FeedProduct[], channel: Channel) {
-    const feed = new CatalogFeedBuilder({
-      title: `${channel.code} product catelog`,
-      link: channel.customFields.productCatalogShopUrl || "",
-      description: `All products for ${channel.code}`,
-    });
-
-    products.map(async (product) => {
-      feed.addProduct(product);
-    });
-
-    return feed.xml();
-  }
-
   async buildAllFeeds() {
     Logger.verbose("Checking channels to build", loggerCtx);
 
     const channels = await this.connection.rawConnection
       .getRepository(Channel)
-      .find();
+      .find({ where: { customFields: { rebuildCatalogFeed: true } } });
 
-    channels.map((channel) => {
-      if (channel.customFields.rebuildCatalogFeed) {
-        this.addChannelRebuildToQueue(channel.id);
-      }
+    channels.forEach((channel) => {
+      Logger.verbose(`Rebuild channel "${channel.code}"`);
+      this.addChannelRebuildToQueue(channel.id);
     });
   }
 
@@ -101,79 +123,123 @@ export class ProductCatalogFeedService implements OnModuleInit {
     return this.jobQueue.add({ channelId });
   }
 
-  async buildChannelFeed(channelId: ID) {
-    const channel = await this.connection.rawConnection
-      .getRepository(Channel)
-      .findOneOrFail({
-        where: { id: channelId },
-        relations: ["defaultTaxZone"],
+  private buildChannelFeed(channelId: ID) {
+    return asyncObservable<BuildFeedReponse>(async (observer) => {
+      const timeStart = Date.now();
+
+      const channel = await this.connection.rawConnection
+        .getRepository(Channel)
+        .findOneOrFail({
+          where: { id: channelId },
+          relations: ["defaultTaxZone"],
+        });
+
+      Logger.verbose(`Start building feed for channel ${channel.code}`);
+
+      const ctx = await this.requestContextService.create({
+        apiType: "custom",
+        channelOrToken: channel,
       });
 
-    const ctx = await this.requestContextService.create({
-      apiType: "custom",
-      channelOrToken: channel,
-    });
+      const getImageUrl = (image?: string) => {
+        if (image) {
+          return `${this.options.assetUrlPrefix.trim()}/${image}`;
+        }
+      };
 
-    const variants = await this.productVariantService.findAll(ctx);
+      const getAvailability = async (
+        variant: ProductVariant
+      ): Promise<AvailabilityFeedField> => {
+        const stock = await this.stockLevelService.getAvailableStock(
+          ctx,
+          variant.id
+        );
 
-    const variantsWithProduct = await Promise.all(
-      variants.items.map(async (variant) => {
-        return this.entityHydrator.hydrate(ctx, variant, {
-          relations: ["product", "product.featuredAsset"],
-        });
+        return stock.stockOnHand > 1 ? "in_stock" : "out_of_stock";
+      };
+
+      const qb = this.connection
+        .getRepository(ctx, ProductVariant)
+        .createQueryBuilder('variants')
+        .setFindOptions({
+          relations: ['translations', 'taxCategory', 'featuredAsset', 'product'],
+          loadEagerRelations: true,
       })
-    );
+        .leftJoin('variants.product', 'product')
+        .leftJoin('product.channels', 'channel')
+        .where('channel.id = :channelId', { channelId });
 
-    const getImageUrl = (image?: string) => {
-      if (image) {
-        return `${this.options.assetUrlPrefix.trim()}/${image}`;
-      }
-    };
-
-    const getAvailability = async (
-      variant: ProductVariant
-    ): Promise<AvailabilityFeedField> => {
-      const stock = await this.stockLevelService.getAvailableStock(
-        ctx,
-        variant.id
+      const count = await qb.getCount();
+      Logger.verbose(
+        `Building product catalog feed. Found ${count} variants for channel ${ctx.channel.code}`,
+        loggerCtx
       );
 
-      return stock.stockOnHand > 1 ? "in_stock" : "out_of_stock";
-    };
+      const batches = Math.ceil(count / BATCH_SIZE);
 
-    const feedProducts = await Promise.all(
-      variantsWithProduct.map<Promise<FeedProduct>>(async (variant) => {
-        const availability = await getAvailability(variant);
+      const feed = new CatalogFeedBuilder({
+        title: `${channel.code} product catelog`,
+        link: channel.customFields.productCatalogShopUrl || "",
+        description: `All products for ${channel.code}`,
+      });
 
-        return {
-          id: variant.sku,
-          title: variant.name,
-          description: variant.product.description,
-          link: `product/${variant.product.slug}`,
-          imageLink: getImageUrl(
-            variant.featuredAsset?.preview ??
-              variant.product?.featuredAsset?.preview
-          ),
-          price: variant.priceWithTax,
-          currency: variant.currencyCode,
-          availability,
-        };
-      })
-    );
+      for (let i = 0; i < batches; i++) {
+        Logger.verbose(`Processing batch ${i + 1} of ${batches}`, loggerCtx);
 
-    const xml = this.buildXML(feedProducts, channel);
+        const variants = await qb
+          .take(BATCH_SIZE)
+          .skip(i * BATCH_SIZE)
+          .getMany();
 
-    const { channel: updatedChannel, output } = await this.output(xml, channel);
+        await Promise.all(
+          variants.map(async (rawVariant) => {
+            const availability = await getAvailability(rawVariant);
+            const translatedVariant = this.translator.translate(rawVariant, ctx, ['product'])
+            const variant = await this.productPriceApplicator.applyChannelPriceAndTax(translatedVariant, ctx) 
 
-    updatedChannel.customFields.rebuildCatalogFeed = false;
+            const product = {
+              id: variant.sku,
+              title: variant.name,
+              description: variant.product.description,
+              link: `product/${variant.product.slug}`,
+              imageLink: getImageUrl(
+                variant.featuredAsset?.preview ??
+                  variant.product?.featuredAsset?.preview
+              ),
+              price: variant.priceWithTax,
+              currency: variant.currencyCode,
+              availability,
+            };
 
-    await this.connection.getRepository(ctx, Channel).save(updatedChannel);
+            feed.addProduct(product);
+          })
+        );
 
-    return {
-      output: channel.customFields.productCatalogOutput,
-      ...output,
-      productCount: feedProducts.length,
-    };
+        observer.next({
+          total: count,
+          completed: Math.min((i + 1) * BATCH_SIZE, count),
+          duration: +new Date() - timeStart,
+        });
+      }
+
+      const xml = feed.xml();
+      Logger.verbose("Completed building feed", loggerCtx);
+
+      const { channel: updatedChannel, output } = await this.output(
+        xml,
+        channel
+      );
+
+      updatedChannel.customFields.rebuildCatalogFeed = false;
+
+      await this.connection.getRepository(ctx, Channel).save(updatedChannel);
+
+      return {
+        total: count,
+        completed: count,
+        duration: +new Date() - timeStart,
+      };
+    });
   }
 
   private async uploadToSftp(
