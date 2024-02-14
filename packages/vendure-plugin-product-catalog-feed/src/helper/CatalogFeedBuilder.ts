@@ -1,69 +1,92 @@
-import { create } from "xmlbuilder2";
-import { XMLBuilder, XMLBuilderCreateOptions } from "xmlbuilder2/lib/interfaces";
+import { create, createCB } from "xmlbuilder2";
+import {
+  XMLBuilder,
+  XMLBuilderCB,
+  XMLBuilderCreateOptions,
+} from "xmlbuilder2/lib/interfaces";
+import { Writable } from "stream";
 
 export type FeedOptions = {
-    title: string;
-    link: string;
-    description?: string;
-}
+  title: string;
+  link: string;
+  description?: string;
+};
 
-export type AvailabilityFeedField = 'in_stock' | 'out_of_stock' | 'preorder' | 'backorder'
+export type AvailabilityFeedField =
+  | "in_stock"
+  | "out_of_stock"
+  | "preorder"
+  | "backorder";
 
 export type FeedProduct = {
-    id: string;
-    title: string;
-    description: string;
-    link: string;
-    imageLink?: string;
-    price: number;
-    currency: string;
-    availability: AvailabilityFeedField
-  };
+  id: string;
+  title: string;
+  description: string;
+  link: string;
+  imageLink?: string;
+  price: number;
+  currency: string;
+  availability: AvailabilityFeedField;
+};
 
 export class CatalogFeedBuilder {
-    private root: XMLBuilder;
-    private options: FeedOptions;
-    
-    constructor(feedOptions: FeedOptions, options: XMLBuilderCreateOptions = {}){
-        this.options = feedOptions
-        this.root = create({version: "1.0", ...options})
+  private xml: XMLBuilderCB;
+  private options: FeedOptions;
 
-        const rssEl = this.root.ele("rss");
-        rssEl.att("xmlns:g", "http://base.google.com/ns/1.0");
-        rssEl.att("version", "2.0");
+  constructor(
+    file: Writable,
+    feedOptions: FeedOptions,
+    options: XMLBuilderCreateOptions = {}
+  ) {
+    this.options = feedOptions;
+    const xml = createCB({
+      data: (text: string) => {
+        file.write(text);
+      },
+      prettyPrint: true,
+    });
 
-        const channelEl = rssEl.ele("channel");
-        channelEl.ele("title").txt(feedOptions.title);
-        channelEl.ele("link").txt(feedOptions.link);
+    xml.on("end", () => {
+      file.end();
+    });
 
-        if(feedOptions.description) {
-            channelEl.ele("description").txt(feedOptions.description);
-        }
+    const root = xml.dec({ version: "1.0" });
+    const rssEl = root
+      .ele("rss")
+      .att("xmlns:g", "http://base.google.com/ns/1.0")
+      .att("version", "2.0");
+
+    const channelEle = rssEl.ele("channel");
+    channelEle.ele("title").txt(feedOptions.title).up();
+    channelEle.ele("link").txt(feedOptions.link).up();
+
+    if (feedOptions.description) {
+      channelEle.ele("description").txt(feedOptions.description).up();
     }
 
-    addProduct(product: FeedProduct) {
-        const channelNode = this.root.first().first()
-        const item = channelNode.ele("item");
+    this.xml = channelEle;
+  }
 
-        item.ele("g:id").txt(product.id);
-        item.ele("g:title").txt(product.title);
-        item.ele("g:description").txt(product.description);
+  addProduct(product: FeedProduct) {
+    const item = this.xml.ele("item");
 
-        item.ele("g:link").txt(`${this.options.link}/${product.link}`);
+    item.ele("g:id").txt(product.id).up();
+    item.ele("g:title").txt(product.title).up();
+    item.ele("g:description").txt(product.description).up();
 
-        if (product.imageLink) {
-          item.ele("g:image_link").txt(product.imageLink);
-        }
+    item.ele("g:link").txt(`${this.options.link}/${product.link}`).up();
 
-        item.ele("g:price").txt(`${product.price / 100} ${product.currency}`);
-        item.ele("g:availability").txt(product.availability);
+    if (product.imageLink) {
+      item.ele("g:image_link").txt(product.imageLink).up();
     }
 
-    xml() {
-        return this.root.end({ prettyPrint: true });
-    }
+    item.ele("g:price").txt(`${product.price / 100} ${product.currency}`).up();
+    item.ele("g:availability").txt(product.availability).up();
 
-    toString() {
-        return this.root.toString()
-    }
+    item.up()
+  }
+
+  end() {
+    this.xml.end();
+  }
 }

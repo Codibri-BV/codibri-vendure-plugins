@@ -16,20 +16,20 @@ import {
   asyncObservable
 } from "@vendure/core";
 import Client from "ssh2-sftp-client";
+import stream from "stream";
 import { PLUGIN_INIT_OPTIONS, loggerCtx } from "../constants";
 import {
   AvailabilityFeedField,
-  CatalogFeedBuilder
+  CatalogFeedBuilder,
 } from "../helper/CatalogFeedBuilder";
 import { ProductCatalogFeedPluginOptions } from "../types";
 
-export const BATCH_SIZE = 2;
+export const BATCH_SIZE = 1000;
 
 type BuildFeedReponse = {
-  total: number,
-  completed: number,
-  duration: number,
-}
+  total: number;
+  completed: number;
+};
 
 @Injectable()
 export class ProductCatalogFeedService implements OnModuleInit {
@@ -45,7 +45,7 @@ export class ProductCatalogFeedService implements OnModuleInit {
     private configService: ConfigService,
     private stockLevelService: StockLevelService,
     private translator: TranslatorService,
-    private productPriceApplicator: ProductPriceApplicator,
+    private productPriceApplicator: ProductPriceApplicator
   ) {
     this.sftpClient = new Client();
   }
@@ -55,35 +55,36 @@ export class ProductCatalogFeedService implements OnModuleInit {
       name: "product-catalog-feed",
       process: async (job) => {
         const ob = this.buildChannelFeed(job.data.channelId);
-        
+
         return new Promise((resolve, reject) => {
           let total: number | undefined;
-          let duration = 0;
           let completed = 0;
           ob.subscribe({
-              next: (response: BuildFeedReponse) => {
-                  if (!total) {
-                      total = response.total;
-                  }
-                  duration = response.duration;
-                  completed = response.completed;
-                  const progress = total === 0 ? 100 : Math.ceil((completed / total) * 100);
-                  job.setProgress(progress);
-              },
-              complete: () => {
-                  resolve({
-                      success: true,
-                      totalProductsCount: total,
-                      timeTaken: duration,
-                  });
-              },
-              error: (err: any) => {
-                  Logger.error(err.message || JSON.stringify(err), undefined, err.stack);
-                  reject(err);
-              },
+            next: (response: BuildFeedReponse) => {
+              if (!total) {
+                total = response.total;
+              }
+              completed = response.completed;
+              const progress =
+                total === 0 ? 100 : Math.ceil((completed / total) * 100);
+              job.setProgress(progress);
+            },
+            complete: () => {
+              resolve({
+                success: true,
+                totalProductsCount: total,
+              });
+            },
+            error: (err: any) => {
+              Logger.error(
+                err.message || JSON.stringify(err),
+                undefined,
+                err.stack
+              );
+              reject(err);
+            },
           });
-      });
-        
+        });
       },
     });
   }
@@ -125,8 +126,6 @@ export class ProductCatalogFeedService implements OnModuleInit {
 
   private buildChannelFeed(channelId: ID) {
     return asyncObservable<BuildFeedReponse>(async (observer) => {
-      const timeStart = Date.now();
-
       const channel = await this.connection.rawConnection
         .getRepository(Channel)
         .findOneOrFail({
@@ -160,14 +159,19 @@ export class ProductCatalogFeedService implements OnModuleInit {
 
       const qb = this.connection
         .getRepository(ctx, ProductVariant)
-        .createQueryBuilder('variants')
+        .createQueryBuilder("variants")
         .setFindOptions({
-          relations: ['translations', 'taxCategory', 'featuredAsset', 'product'],
+          relations: [
+            "translations",
+            "taxCategory",
+            "featuredAsset",
+            "product",
+          ],
           loadEagerRelations: true,
-      })
-        .leftJoin('variants.product', 'product')
-        .leftJoin('product.channels', 'channel')
-        .where('channel.id = :channelId', { channelId });
+        })
+        .leftJoin("variants.product", "product")
+        .leftJoin("product.channels", "channel")
+        .where("channel.id = :channelId", { channelId });
 
       const count = await qb.getCount();
       Logger.verbose(
@@ -177,7 +181,15 @@ export class ProductCatalogFeedService implements OnModuleInit {
 
       const batches = Math.ceil(count / BATCH_SIZE);
 
-      const feed = new CatalogFeedBuilder({
+      const { assetOptions } = this.configService;
+      const { assetStorageStrategy } = assetOptions;
+      const fileName = `product-catalog/${channel.token}.xml`;
+
+      const passThrough = new stream.PassThrough();
+
+      const asset = assetStorageStrategy.writeFileFromStream(fileName, passThrough);
+
+      const feed = new CatalogFeedBuilder(passThrough, {
         title: `${channel.code} product catelog`,
         link: channel.customFields.productCatalogShopUrl || "",
         description: `All products for ${channel.code}`,
@@ -194,8 +206,16 @@ export class ProductCatalogFeedService implements OnModuleInit {
         await Promise.all(
           variants.map(async (rawVariant) => {
             const availability = await getAvailability(rawVariant);
-            const translatedVariant = this.translator.translate(rawVariant, ctx, ['product'])
-            const variant = await this.productPriceApplicator.applyChannelPriceAndTax(translatedVariant, ctx) 
+            const translatedVariant = this.translator.translate(
+              rawVariant,
+              ctx,
+              ["product"]
+            );
+            const variant =
+              await this.productPriceApplicator.applyChannelPriceAndTax(
+                translatedVariant,
+                ctx
+              );
 
             const product = {
               id: variant.sku,
@@ -206,7 +226,7 @@ export class ProductCatalogFeedService implements OnModuleInit {
                 variant.featuredAsset?.preview ??
                   variant.product?.featuredAsset?.preview
               ),
-              price: variant.priceWithTax,
+              price: variant.priceWithTax, // TODO: this is always 0 even when listPrice is filled in
               currency: variant.currencyCode,
               availability,
             };
@@ -218,26 +238,21 @@ export class ProductCatalogFeedService implements OnModuleInit {
         observer.next({
           total: count,
           completed: Math.min((i + 1) * BATCH_SIZE, count),
-          duration: +new Date() - timeStart,
         });
       }
 
-      const xml = feed.xml();
+      feed.end()
+
       Logger.verbose("Completed building feed", loggerCtx);
 
-      const { channel: updatedChannel, output } = await this.output(
-        xml,
-        channel
-      );
+      channel.customFields.productCatalogXml = await asset;
+      channel.customFields.rebuildCatalogFeed = false;
 
-      updatedChannel.customFields.rebuildCatalogFeed = false;
-
-      await this.connection.getRepository(ctx, Channel).save(updatedChannel);
+      await this.connection.getRepository(ctx, Channel).save(channel);
 
       return {
         total: count,
         completed: count,
-        duration: +new Date() - timeStart,
       };
     });
   }
