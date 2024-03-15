@@ -1,5 +1,4 @@
-import { Query } from "@nestjs/graphql";
-import { gql } from "graphql-tag";
+import { createSftpMockServer } from "@micham/sftp-mock-server";
 import { AdminUiPlugin } from "@vendure/admin-ui-plugin";
 import { AssetServerPlugin } from "@vendure/asset-server-plugin";
 import {
@@ -10,16 +9,17 @@ import {
   mergeConfig,
 } from "@vendure/core";
 import {
+  SqljsInitializer,
   createTestEnvironment,
   registerInitializer,
-  SqljsInitializer,
   testConfig,
 } from "@vendure/testing";
+import { compileUiExtensions } from "@vendure/ui-devkit/compiler";
+import { gql } from "graphql-tag";
 import path from "path";
 import { initialData } from "../../test-utils/src/initial-data";
 import { ProductCatalogFeedPlugin, ProductCatalogFeedService } from "../src";
-import { createSftpMockServer } from "@micham/sftp-mock-server";
-import { compileUiExtensions } from "@vendure/ui-devkit/compiler";
+import { googleCatalogFeed } from './../src/strategy/google-product-catalog-feed-strategy';
 
 require("dotenv").config();
 
@@ -46,7 +46,7 @@ const sftpConfig = {
         assetUploadDir: path.join(__dirname, "__data__/assets"),
         route: "assets",
       }),
-      ProductCatalogFeedPlugin.init({ assetUrlPrefix: 'http://localhost:3050/assets' }),
+      ProductCatalogFeedPlugin.init({ assetUrlPrefix: 'http://localhost:3050/assets', productCatalogFeedOutputFactory: googleCatalogFeed }),
       DefaultSearchPlugin,
       AdminUiPlugin.init({
         port: 3002,
@@ -57,7 +57,7 @@ const sftpConfig = {
           devMode: true
         }),
       }),
-    ],
+    ], 
     apiOptions: {
       shopApiPlayground: true,
       adminApiPlayground: true,

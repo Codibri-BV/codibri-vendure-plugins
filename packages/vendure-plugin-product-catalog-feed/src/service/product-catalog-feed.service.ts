@@ -13,15 +13,11 @@ import {
   StockLevelService,
   TransactionalConnection,
   TranslatorService,
-  asyncObservable
+  asyncObservable,
 } from "@vendure/core";
 import Client from "ssh2-sftp-client";
 import stream from "stream";
 import { PLUGIN_INIT_OPTIONS, loggerCtx } from "../constants";
-import {
-  AvailabilityFeedField,
-  CatalogFeedBuilder,
-} from "../helper/CatalogFeedBuilder";
 import { ProductCatalogFeedPluginOptions } from "../types";
 
 export const BATCH_SIZE = 1000;
@@ -107,6 +103,12 @@ export class ProductCatalogFeedService implements OnModuleInit {
     }
   }
 
+  private getImageUrl(image?: string) {
+    if (image) {
+      return `${this.options.assetUrlPrefix.trim()}/${image}`;
+    }
+  }
+
   async buildAllFeeds() {
     Logger.verbose("Checking channels to build", loggerCtx);
 
@@ -140,22 +142,16 @@ export class ProductCatalogFeedService implements OnModuleInit {
         channelOrToken: channel,
       });
 
-      const getImageUrl = (image?: string) => {
-        if (image) {
-          return `${this.options.assetUrlPrefix.trim()}/${image}`;
-        }
-      };
+      // const getAvailability = async (
+      //   variant: ProductVariant
+      // ): Promise<AvailabilityFeedField> => {
+      //   const stock = await this.stockLevelService.getAvailableStock(
+      //     ctx,
+      //     variant.id
+      //   );
 
-      const getAvailability = async (
-        variant: ProductVariant
-      ): Promise<AvailabilityFeedField> => {
-        const stock = await this.stockLevelService.getAvailableStock(
-          ctx,
-          variant.id
-        );
-
-        return stock.stockOnHand > 1 ? "in_stock" : "out_of_stock";
-      };
+      //   return stock.stockOnHand > 1 ? "in_stock" : "out_of_stock";
+      // };
 
       const qb = this.connection
         .getRepository(ctx, ProductVariant)
@@ -166,6 +162,7 @@ export class ProductCatalogFeedService implements OnModuleInit {
             "taxCategory",
             "featuredAsset",
             "product",
+            "product.featuredAsset"
           ],
           loadEagerRelations: true,
         })
@@ -187,13 +184,19 @@ export class ProductCatalogFeedService implements OnModuleInit {
 
       const passThrough = new stream.PassThrough();
 
-      const asset = assetStorageStrategy.writeFileFromStream(fileName, passThrough);
+      const asset = assetStorageStrategy.writeFileFromStream(
+        fileName,
+        passThrough
+      );
 
-      const feed = new CatalogFeedBuilder(passThrough, {
-        title: `${channel.code} product catelog`,
-        link: channel.customFields.productCatalogShopUrl || "",
-        description: `All products for ${channel.code}`,
+      const feedFactory = this.options.productCatalogFeedOutputFactory;
+
+      const feed = feedFactory(channel, {
+        assetUrlPrefix: this.options.assetUrlPrefix,
+        productUrl: this.options.productUrl,
       });
+
+      feed.create(passThrough);
 
       for (let i = 0; i < batches; i++) {
         Logger.verbose(`Processing batch ${i + 1} of ${batches}`, loggerCtx);
@@ -203,37 +206,24 @@ export class ProductCatalogFeedService implements OnModuleInit {
           .skip(i * BATCH_SIZE)
           .getMany();
 
-        await Promise.all(
-          variants.map(async (rawVariant) => {
-            const availability = await getAvailability(rawVariant);
-            const translatedVariant = this.translator.translate(
-              rawVariant,
-              ctx,
-              ["product"]
+        for (let vi = 0; vi < variants.length; vi++) {
+          const variant =
+            await this.productPriceApplicator.applyChannelPriceAndTax(
+              variants[vi],
+              ctx
             );
-            const variant =
-              await this.productPriceApplicator.applyChannelPriceAndTax(
-                translatedVariant,
-                ctx
-              );
 
-            const product = {
-              id: variant.sku,
-              title: variant.name,
-              description: variant.product.description,
-              link: `product/${variant.product.slug}`,
-              imageLink: getImageUrl(
-                variant.featuredAsset?.preview ??
-                  variant.product?.featuredAsset?.preview
-              ),
-              price: variant.priceWithTax, // TODO: this is always 0 even when listPrice is filled in
-              currency: variant.currencyCode,
-              availability,
-            };
+            const translatedVariant = this.translator.translate(variant, ctx, [
+              "product",
+            ]);
+            
+          const stock = await this.stockLevelService.getAvailableStock(
+            ctx,
+            variant.id
+          );
 
-            feed.addProduct(product);
-          })
-        );
+          feed.addProduct(translatedVariant, stock);
+        }
 
         observer.next({
           total: count,
@@ -241,7 +231,7 @@ export class ProductCatalogFeedService implements OnModuleInit {
         });
       }
 
-      feed.end()
+      feed.end();
 
       Logger.verbose("Completed building feed", loggerCtx);
 

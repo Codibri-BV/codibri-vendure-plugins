@@ -1,5 +1,5 @@
-import path from 'path';
-import { AdminUiExtension } from '@vendure/ui-devkit/compiler';
+import path from "path";
+import { AdminUiExtension } from "@vendure/ui-devkit/compiler";
 import {
   EventBus,
   LanguageCode,
@@ -20,7 +20,7 @@ import { ProductCatalogAdminResolver } from "./api/product-catalog.admin.resolve
   imports: [PluginCommonModule],
   adminApiExtensions: {
     schema: adminApiExtensions,
-    resolvers: [ProductCatalogAdminResolver]
+    resolvers: [ProductCatalogAdminResolver],
   },
   providers: [
     ProductCatalogFeedService,
@@ -149,15 +149,22 @@ export class ProductCatalogFeedPlugin {
   static options: ProductCatalogFeedPluginOptions;
 
   static init(
-    options: ProductCatalogFeedPluginOptions
+    options: Partial<ProductCatalogFeedPluginOptions> &
+      Pick<
+        ProductCatalogFeedPluginOptions,
+        "assetUrlPrefix" | "productCatalogFeedOutputFactory"
+      >
   ): typeof ProductCatalogFeedPlugin {
-    this.options = options;
+    this.options = {
+      productUrl: (shop, variant) => `${shop}/${variant.product.slug}`,
+      ...options,
+    };
     return ProductCatalogFeedPlugin;
   }
 
   static ui: AdminUiExtension = {
-    id: 'product-catalog-feed-extentions',
-    extensionPath: path.join(__dirname, 'ui'),
+    id: "product-catalog-feed-extentions",
+    extensionPath: path.join(__dirname, "ui"),
     ngModules: [
       {
         type: "shared",
